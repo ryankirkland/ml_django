@@ -6,7 +6,7 @@ router = routers.DefaultRouter()
 router.register('MyAPI', views.ApprovalsView)
 
 urlpatterns = [
-    # path('form/', views.myform, name='myform'),
+    path('form/', views.cxcontact, name='cxform'),
     path('api/', include(router.urls)),
     path('status/', views.approve_reject)
 ]

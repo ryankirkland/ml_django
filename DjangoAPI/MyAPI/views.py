@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from django.http import JsonResponse
+from django.contrib import messages
 from rest_framework.decorators import api_view
 from rest_framework import viewsets
 from rest_framework.response import Response
@@ -7,28 +8,69 @@ from rest_framework import status
 from rest_framework.parsers import JSONParser
 from .serializers import ApprovalSerializer
 from .models import Approval
+from .forms import ApprovalForm
 from keras.models import load_model
 import numpy as np
 import pandas as pd
 from pickle import load
+from keras import backend as K
 
 # Create your views here.
 class ApprovalsView(viewsets.ModelViewSet):
     queryset = Approval.objects.all()
     serializer_class = ApprovalSerializer
 
-@api_view(['POST'])
-def approve_reject(request):
+def ohevalue(df):
+	ohe_col = load(open("/Users/ryankirkland/Desktop/projects/ml-django/allcol.pkl", 'rb'))
+	cat_columns=['Gender','Married','Education','Self_Employed','Property_Area']
+	df_processed = pd.get_dummies(df, columns=cat_columns)
+	newdict={}
+	for i in ohe_col:
+		if i in df_processed.columns:
+			newdict[i]=df_processed[i].values
+		else:
+			newdict[i]=0
+	newdf=pd.DataFrame(newdict)
+	return newdf
+
+def approve_reject(unit):
     try:
         mdl = load_model('/Users/ryankirkland/Desktop/projects/ml-django/loan_model')
-        mydata = request.data
-        unit = np.array(mydata.values())
-        unit = unit.reshape(1,-1)
         scaler = load((open('/Users/ryankirkland/Desktop/projects/ml-django/scaler.pkl', 'rb')))
         X = scaler.transform(unit)
         y_pred = mdl.predict(X)
-        y_pred = (y_pred>0.5)
-        newdf = pd.DataFrame(y_pred, columns=['Status']).replace({True: 'Approved', False: 'Rejected'})
-        return JsonResponse('Your Statis is {}'.format(newdf), safe=False)
+        y_pred = (y_pred>0.58)
+        newdf = pd.DataFrame(y_pred, columns=['Status'])
+        newdf = newdf.replace({True:'Approved', False:'Rejected'})
+        K.clear_session()
+        return (newdf.values[0][0],X[0])
     except ValueError as e:
-        return Response(e.args[0], status.HTTP_400_BAD_REQUEST)
+        return (e.args[0])
+
+def cxcontact(request):
+	if request.method == 'POST':
+		form = ApprovalForm(request.POST)
+		if form.is_valid():
+				Firstname = form.cleaned_data['firstname']
+				Lastname = form.cleaned_data['lastname']
+				Dependents = form.cleaned_data['Dependents']
+				ApplicantIncome = form.cleaned_data['ApplicantIncome']
+				CoapplicantIncome = form.cleaned_data['CoapplicantIncome']
+				LoanAmount = form.cleaned_data['LoanAmount']
+				Loan_Amount_Term = form.cleaned_data['Loan_Amount_Term']
+				Credit_History = form.cleaned_data['Credit_History']
+				Gender = form.cleaned_data['Gender']
+				Married = form.cleaned_data['Married']
+				Education = form.cleaned_data['Education']
+				Self_Employed = form.cleaned_data['Self_Employed']
+				Property_Area = form.cleaned_data['Property_Area']
+				myDict = (request.POST).dict()
+				df = pd.DataFrame(myDict, index=[0])
+				answer = approve_reject(ohevalue(df))[0]
+				Xscalers = approve_reject(ohevalue(df))[1]
+				print(Xscalers)
+				messages.success(request,'Application Status: {}'.format(answer))
+	
+	form = ApprovalForm()
+				
+	return render(request, 'myform/cxform.html', {'form':form})
